@@ -4,7 +4,7 @@
 
 ## Abstract
 
-We trained three specialized AI agents — ChemicalExpert (18 skills), ProteinEngineer (7 skills), and QuantumExpert (3 skills) — using a systematic 7-step methodology on the OpenClaw platform. The agents share a vault-based skill system and collaborate through typed JSON handoff protocols. Validated on an IPF/ALK5 drug discovery campaign over five DMTA cycles, the system achieved 100% DFT pass rate in the final cycle using pocket-conditioned 3D diffusion (DiffSBDD). All training artifacts are open-source.
+We trained three specialized AI agents — ChemicalExpert (21 skills), ProteinEngineer (7 skills), and QuantumExpert (3 skills) — using a systematic 7-step methodology on the OpenClaw platform. The agents share a vault-based skill system and collaborate through typed JSON handoff protocols. Validated on an IPF/ALK5 drug discovery campaign over six DMTA cycles, the system achieved 100% DFT pass rate across two consecutive cycles using pocket-conditioned 3D diffusion (DiffSBDD) and a full multi-signal validation pipeline (PoseBusters geometry QC, GNINA CNN rescoring, multi-seed pose robustness, Boltz-2 affinity prediction, and conflict-aware panel selection). All training artifacts are open-source.
 
 ---
 
@@ -16,7 +16,7 @@ Single-agent approaches hit a depth ceiling: one agent cannot maintain expert-le
 
 **What we built:**
 
-- **ChemicalExpert (CE)**: 18 skills covering molecular generation (VAE + diffusion), QSAR, docking, interaction analysis, safety screening, and synthesis planning
+- **ChemicalExpert (CE)**: 21 skills covering molecular generation (VAE + diffusion), QSAR, docking (Vina + GNINA), interaction analysis (ProLIF + PLIF recovery), safety screening, geometry QC (PoseBusters), binding affinity prediction (Boltz-2), multi-signal panel selection, and synthesis planning
 - **ProteinEngineer (PE)**: 7 skills for protein interface redesign, stability assessment, and developability screening
 - **QuantumExpert (QE)**: 3 skills for DFT calculations, excited-state methods, and cross-agent workflow orchestration
 
@@ -38,7 +38,7 @@ OpenClaw is an open-source agent framework that provides the runtime for all thr
 │  (openclaw-truthbook)                               │
 │  ┌─────────────┐ ┌─────────────┐ ┌──────────────┐  │
 │  │ CE Skills   │ │ PE Skills   │ │ QE Skills    │  │
-│  │ (18 QMD     │ │ (7 QMD      │ │ (3 QMD       │  │
+│  │ (21 QMD     │ │ (7 QMD      │ │ (3 QMD       │  │
 │  │ collections)│ │ collections)│ │ collections) │  │
 │  └─────────────┘ └─────────────┘ └──────────────┘  │
 └────────────┬──────────────┬──────────────┬──────────┘
@@ -56,7 +56,12 @@ OpenClaw is an open-source agent framework that provides the runtime for all thr
      │  RDKit, Vina  │ │ ESM-2  │ │  DFT, TD-DFT  │
      │  ProLIF, MACE │ │ESMFold │ │  CASSCF/NEVPT2│
      │  DiffSBDD     │ │        │ │               │
-     └───────────────┘ └────────┘ └───────────────┘
+     │  GNINA, PB    │ │        │ │               │
+     ├───────────────┤ └────────┘ └───────────────┘
+     │ conda: boltz  │
+     │  Boltz-2      │
+     │  (isolated)   │
+     └───────────────┘
 ```
 
 ### 2.3 Shared Vault Architecture
@@ -129,14 +134,16 @@ This methodology was applied identically across chemistry (CE), protein engineer
 
 **Mission.** CE is a pragmatic "lab-mate" agent for digital chemistry: molecular representations, property modeling, molecule generation, safety filtering, docking/interaction analysis, and reproducible experiment pipelines.
 
-**Skill set (18 skills):**
+**Skill set (21 skills):**
 
 | Category | Skills |
 |----------|--------|
 | Generation & evaluation | chem-molgen, chem-scaffold-conditioned-gen, chem-pocket-diffusion |
 | Modeling & analytics | chem-qsar, chem-gnn, chem-kinase-sar |
 | Safety & developability | chem-reactivity-safety, chem-admet |
-| Docking & interpretation | chem-docking, chem-docking-interactions, chem-protonation-tautomer |
+| Docking & interpretation | chem-docking (+ multi-seed + GNINA), chem-docking-interactions (+ PLIF recovery), chem-protonation-tautomer |
+| Affinity & selection | chem-affinity-prediction (Boltz-2), chem-panel-selection |
+| Quality control | chem-structure-qc-lite (PoseBusters) |
 | Synthesis planning | chem-retrosynthesis, chem-rxn-conditions |
 | 3D & physics utilities | chem-3dgen, chem-mlff |
 | Orchestration & tooling | chem-experiment, chem-literature, chem-llm |
@@ -147,6 +154,7 @@ This methodology was applied identically across chemistry (CE), protein engineer
 2. Separation of concerns: generation, safety, docking, interpretation, and QC are explicit pipeline stages
 3. Failure must be informative: every failure produces a traceable artifact
 4. Cross-agent contracts: handoffs use strict schemas with minimal assumptions
+5. Multi-signal validation: no single metric is trusted alone; panel selection resolves disagreements
 
 **Capability boundary.** CE is not authoritative for final synthetic feasibility without external validation, DFT-level electronic properties (delegated to QE), or claims of true binding affinity from docking scores.
 
@@ -168,17 +176,9 @@ This methodology was applied identically across chemistry (CE), protein engineer
 
 **Key training discoveries (through three progressive practice runs):**
 
-PE was validated on three targets of increasing difficulty, each exposing different failure modes:
-
 - **1YCR (short peptide binder)**: Exposed metric pathologies — pLDDT scaling artifacts, clash counting without bonded exclusions, TM-score instability on short sequences. Led to peptide-aware fold-back rules with RMSD as the primary metric.
 - **1BRS (standard protein interface)**: Revealed tool disagreement as a diagnostic signal — fold-back PASS + interface PASS but stability FAIL (catastrophic LLR). Led to interface-mutation mode with burial-aware strictness.
 - **1Z92 (cytokine interface, full DBTL cycle)**: Uncovered system-level blockers — fold-back cannot be a hard gate when WT itself is unreliable, and over-tight constraints collapse sequence diversity. Led to WT sanity check and constraint-relaxation strategies.
-
-Three cross-cutting lessons emerged:
-
-- ESM-2 evolutionary bias conflicts with interface mutations: interface residues conserved for function get penalized, requiring relaxed LLR gates in interface-mutation mode
-- ESMFold cannot form disulfide bonds, causing low pLDDT for disulfide-rich targets: requires WT sanity check before applying fold-back as a hard gate
-- Developability gates must be WT-relative: only flag issues *new* to the design, not inherited from wildtype
 
 **Capability boundary.** PE uses evolutionary and structural proxies, not physics-based energy calculations. It does not include FoldX/Rosetta ΔΔG tooling by default.
 
@@ -199,7 +199,7 @@ Three cross-cutting lessons emerged:
 - Gate-first execution: if SCF doesn't converge, don't report energies; if geometry isn't converged, don't proceed to frequencies
 - Method labeling as a contract: every number is tied to functional/basis/software version
 - Batch robustness: per-molecule independence with checkpointing prevents one failure from stopping the batch
-- Dispersion correction vigilance: QE initially ran B97-D without verifying dispersion was active in PySCF — a silent failure mode. The correction was detected during behavioral review, leading to a permanent "verify dispersion" gate and a re-run of affected calculations. This became QE's most instructive self-diagnosis moment.
+- Dispersion correction vigilance: QE initially ran B97-D without verifying dispersion was active in PySCF — a silent failure mode. The correction was detected during behavioral review, leading to a permanent "verify dispersion" gate and a re-run of affected calculations.
 
 **Capability boundary.** QE works within PySCF's capabilities. Methods requiring unavailable corrections are flagged, not silently downgraded.
 
@@ -215,14 +215,14 @@ CE → QE handoff uses a strict JSON contract:
 {
   "source_agent": "ChemicalExpert",
   "task": "qc_screening",
-  "project": "IPF_ALK5_cycle5",
+  "project": "IPF_ALK5_cycle6",
   "molecules": [
     {
-      "mol_id": "hinge_1",
+      "mol_id": "mol_0064",
       "smiles": "...",
       "charge": 0,
       "spin": 0,
-      "vina_score": -10.01,
+      "vina_score": -10.04,
       "hinge_hbond": true,
       "geometry_source": "rdkit_embed",
       "geometry_file": null
@@ -232,13 +232,13 @@ CE → QE handoff uses a strict JSON contract:
 }
 ```
 
-The `geometry_source` field (added in Cycle 5) supports two modes: `"rdkit_embed"` (default, QE generates 3D from SMILES) and `"diffsbdd_3d"` (CE provides pre-generated 3D coordinates via `geometry_file`). QE returns results with `qc_flag` per molecule (PASS / OPT_FAIL / SCF_FAIL), enabling CE to make gate decisions without interpreting raw QC data.
+The `geometry_source` field supports two modes: `"rdkit_embed"` (default, QE generates 3D from SMILES) and `"diffsbdd_3d"` (CE provides pre-generated 3D coordinates via `geometry_file`). QE returns results with `qc_flag` per molecule (PASS / OPT_FAIL / SCF_FAIL), enabling CE to make gate decisions without interpreting raw QC data.
 
 ### 5.2 Gate Contracts
 
 Each handoff includes pre-processing gates on the sending side:
 
-- **CE pre-processing before QE handoff**: RDKit 3D embedding + MMFF convergence → pH 7.4 protomer/charge → MACE geometry prescreen → JSON packaging
+- **CE pre-processing before QE handoff**: PoseBusters QC → safety screen → Vina docking → multi-seed robustness → GNINA rescoring → ProLIF + PLIF recovery → panel selection → RDKit 3D embedding + MMFF convergence → MACE geometry prescreen → JSON packaging
 - **QE gates during DFT**: SCF convergence → geometry optimization convergence → frequency analysis (n_imag = 0) → property extraction
 
 ### 5.3 Failure Handling
@@ -248,13 +248,14 @@ The protocol is designed so failures at any stage produce actionable diagnostics
 - OPT_FAIL molecules are flagged but retained in the audit trail
 - Repeated OPT_FAIL on the same SMILES across cycles triggers a structural blacklist
 - MACE prescreen rejections are logged with strain values for calibration
+- PoseBusters failures are logged with specific failure reasons (bond_lengths, bond_angles, steric_clash, etc.)
 
 ### 5.4 Potential Cross-Agent Interfaces (Not Yet Tested)
 
 The current validation covers CE↔QE collaboration. Two additional interfaces are architecturally ready but not yet exercised:
 
-- **PE↔CE (protein-ligand co-design)**: CE proposes ligands and binding hypotheses; PE redesigns the protein interface to improve complementarity or selectivity. The handoff would carry structural constraints (contact residues, burial classification) from PE to CE's docking stage.
-- **PE↔QE (mechanism-driven enzyme engineering)**: QE provides energetic insights on catalytic steps; PE translates those into sequence changes. This would require a new handoff schema carrying active-site geometry and energy constraints.
+- **PE↔CE (protein-ligand co-design)**: CE proposes ligands and binding hypotheses; PE redesigns the protein interface to improve complementarity or selectivity.
+- **PE↔QE (mechanism-driven enzyme engineering)**: QE provides energetic insights on catalytic steps; PE translates those into sequence changes.
 
 ---
 
@@ -266,70 +267,63 @@ Idiopathic pulmonary fibrosis (IPF) has limited treatment options. We tasked the
 
 ### 6.2 Cycle 1: Autonomous Pipeline + Self-Diagnosis
 
-CE autonomously selected ALK5 as the target, chose safety-first weighting (chronic disease), and ran the full pipeline: ChEMBL data → QSAR → VAE generation → ADMET gates → docking → interaction analysis.
+CE autonomously selected ALK5 as the target, chose safety-first weighting (chronic disease), and ran the full pipeline.
 
-**Self-diagnosis (unprompted):** CE identified that 4/5 Top5 candidates lacked the hinge H-bond required for Type I kinase inhibition. Root cause: VAE KL collapse producing molecules outside kinase chemical space.
+**Self-diagnosis (unprompted):** CE identified that 4/5 Top5 candidates lacked the hinge H-bond required for Type I kinase inhibition. Root cause: VAE KL collapse.
 
 **Result:** Top5 hinge H-bond rate: 1/5 (20%)
 
 ### 6.3 Cycle 2: Fixing the Generator (6 Controlled Experiments)
 
-CE systematically attempted to fix generation quality:
-
-| Experiment | Strategy | Coverage Ratio | Outcome |
-|------------|----------|---------------|---------|
-| 1 | Cyclical annealing (fix KL collapse) | 0.021 | Latent fixed, wrong chemical space |
-| 2 | Training set enrichment | 0.038 | Already at target, no change |
-| 3 | Fragment-conditioned VAE (prefix) | 1.379 | Trivial solution (string concatenation) |
-| 4 | Prefix=False validation | 0.002 | Confirmed: conditioning was fake |
-| 5 | True latent conditioning | 0.054 | Model ignores frag_embed |
-| 6 | Auxiliary fragment classifier | 0.095 | Insufficient despite bug fix |
-| **D** | **Rejection sampling** | **1.573** | **Adopted — passed all gates** |
+CE systematically attempted to fix generation quality through 6 experiments, concluding that SELFIES GRU VAE decoders structurally ignore external conditioning signals. Adopted rejection sampling as pragmatic fallback.
 
 **Result:** Top5 hinge H-bond rate: 4/5 (80%)
 
 ### 6.4 Cycle 3: Strategy E (Logit Bias Decoding)
 
-Built on the Cycle 2 finding, CE tested inference-time logit bias (+2.0 on fragment tokens). This achieved coverage ratio 1.393 with 2x better efficiency than rejection sampling.
-
-Cross-attention conditioning was also attempted and failed (coverage 0.049), further confirming the architectural limitation.
+Logit bias (+2.0 on fragment tokens) achieved coverage ratio 1.393 with 2x better efficiency than rejection sampling.
 
 **Result:** Top5 hinge H-bond rate: 4/5 (80%)
 
 ### 6.5 Cycle 4: Full CE↔QE Collaboration
 
-The complete multi-agent loop:
-
-1. CE: Generated 1000 molecules (logit bias) → safety screen (466 survivors) → docked 50 → interaction analysis → Top5 (3/5 hinge H-bond)
-2. CE: QC pre-processing (RDKit + protomer + MACE prescreen) → 2 molecules handed to QE
-3. QE: Batch DFT (B97-D/def2-SVP) → 1 PASS, 1 OPT_FAIL (50% fail rate)
-4. CE: Integrated QC results into multi-objective scoring → retrosynthesis for all PASS molecules
+The complete multi-agent loop: generation → safety → docking → interaction analysis → QC prescreen → QE DFT → scoring → retrosynthesis. QE: 1 PASS, 1 OPT_FAIL (50% fail rate).
 
 ### 6.6 Cycle 5: Pocket-Conditioned Diffusion (DiffSBDD)
 
-Replaced the SELFIES VAE with DiffSBDD, a pocket-conditioned 3D diffusion model running on GPU (RTX 4080):
+Replaced SELFIES VAE with DiffSBDD. Key discovery: DiffSBDD's 3D coordinates are for molecular design, not QC geometry (MACE strain 450-630 kcal/mol). DFT: 3/3 PASS (100%).
 
-1. CE: Generated 98 molecules from ALK5 pocket in ~2 minutes, 89 valid (90.8%)
-2. CE: Safety screen — 28% reject rate (vs VAE's 53%)
-3. CE: Docked 50 → Top5 (3/5 hinge H-bond), best Vina -10.270 (surpassing the co-crystal ligand)
-4. CE: QC pre-processing — DiffSBDD's 3D coordinates showed extreme MACE strain (450-630 kcal/mol), confirming they are optimized for docking pose, not molecular stability. Solution: use DiffSBDD for molecular design (SMILES), RDKit re-embed for QC geometry.
-5. QE: Batch DFT → **3/3 PASS (100%)**, best candidate Vina -10.01, score_final 10.404
+### 6.7 Cycle 6: Full 21-Skill Pipeline
 
-### 6.7 Cumulative Results
+First cycle using all new tools:
+
+1. CE: Generated 91 molecules (DiffSBDD), 85 RDKit-valid (93.4%)
+2. CE: PoseBusters QC — 56/91 PB-valid (61.5%), catching 35% more geometry issues than RDKit alone
+3. CE: Safety screen — 43 survivors (23% reject, lowest ever)
+4. CE: Vina docking 43 molecules, best Vina -10.04
+5. CE: ProLIF + PLIF recovery on Top20, 7 with hinge H-bond
+6. CE: Multi-seed docking (3 seeds) — only 1/7 survived pose convergence + hinge consistency
+7. CE: GNINA CNN rescoring as orthogonal ranking signal
+8. CE: Panel selection (conflict-aware, relaxed hinge gate ≥0.67) → 3 candidates
+9. CE: Boltz-2 affinity (weak signal on ALK5, consistent with calibration)
+10. QE: Batch DFT → **2/2 PASS (100%)**, best candidate mol_0064, score_final **10.432** (new record)
+
+### 6.8 Cumulative Results
 
 **Progress across cycles:**
 
-| Metric | Cycle 1 | Cycle 2 | Cycle 3 | Cycle 4 | Cycle 5 |
-|--------|---------|---------|---------|---------|---------|
-| Top5 hinge H-bond | 1/5 (20%) | 4/5 (80%) | 4/5 (80%) | 3/5 (60%) | 3/5 (60%) |
-| Generation method | Unconditional VAE | Rejection sampling | Logit bias | Logit bias | DiffSBDD |
-| Best Vina score | -9.591 | -9.158 | -8.927 | -9.997 | **-10.270** |
-| DFT PASS rate | — | — | 50% | 50% | **100%** |
-| Safety reject rate | 29% | 41% | 54% | 53% | **28%** |
+| Metric | Cycle 1 | Cycle 2 | Cycle 3 | Cycle 4 | Cycle 5 | Cycle 6 |
+|--------|---------|---------|---------|---------|---------|---------|
+| Generation method | Unconditional VAE | Rejection sampling | Logit bias | Logit bias | DiffSBDD | DiffSBDD |
+| PB-valid rate | — | — | — | — | 55.1% | **61.5%** |
+| Safety reject rate | 29% | 41% | 54% | 53% | 28% | **23%** |
+| Best Vina score | -9.591 | -9.158 | -8.927 | -9.997 | **-10.270** | -10.04 |
+| DFT PASS rate | — | — | 50% | 50% | 100% | **100%** |
+| Best score_final | — | — | — | — | 10.404 | **10.432** |
 
-**CE↔QE collaboration statistics (DFT level):** 9 molecules submitted across 3 cycles. 6 PASS, 3 OPT_FAIL (33% overall fail rate; 0% in Cycle 5 with DiffSBDD).
+**CE↔QE collaboration statistics (DFT level):** 11 molecules submitted across 4 cycles. 8 PASS, 3 OPT_FAIL (27% overall fail rate). DiffSBDD era (Cycles 5-6): **5/5 = 100% PASS**.
 
-**Final DFT-validated candidates:** 6 molecules with complete electronic structure data (E_total, HOMO, LUMO, gap, dipole), retrosynthetic routes, and reaction conditions.
+**Final DFT-validated candidates:** 8 molecules with complete electronic structure data (E_total, HOMO, LUMO, gap, dipole), retrosynthetic routes, and reaction conditions.
 
 ---
 
@@ -337,27 +331,31 @@ Replaced the SELFIES VAE with DiffSBDD, a pocket-conditioned 3D diffusion model 
 
 ### 7.1 SELFIES GRU VAE Conditioning Failure
 
-Six controlled experiments demonstrated that SELFIES GRU VAE decoders structurally ignore external conditioning signals. Concatenation, auxiliary loss, and cross-attention all failed — the autoregressive decoder learns to rely on its own hidden state history, bypassing any conditioning input. Inference-time intervention (logit bias, rejection sampling) is the validated solution for enforcing substructure constraints on this architecture.
+Six controlled experiments demonstrated that SELFIES GRU VAE decoders structurally ignore external conditioning signals. Inference-time intervention (logit bias, rejection sampling) is the validated solution.
 
 ### 7.2 Pocket-Conditioned Diffusion Changes Everything
 
-DiffSBDD produced better molecules across every metric: lower safety reject rate (28% vs 53%), better Vina scores (-10.270 vs -9.997), and 100% DFT pass rate (vs 50%). However, its 3D coordinates are optimized for docking pose, not molecular stability (MACE strain 450-630 kcal/mol). The correct usage is: DiffSBDD for molecular design (what to make), RDKit for geometry preparation (how it looks in 3D for QC).
+DiffSBDD produced better molecules across every metric and achieved 100% DFT pass rate across two consecutive cycles. However, its 3D coordinates are optimized for docking pose, not molecular stability (MACE strain 450-630 kcal/mol). Use DiffSBDD for molecular design, RDKit for geometry preparation.
 
-### 7.3 Interaction Analysis is Mandatory
+### 7.3 Multi-Signal Validation Catches Silent Failures
 
-Pure docking scores mask critical binding mode failures. In Cycle 1, 80% of top candidates lacked the fundamental hinge H-bond despite acceptable Vina scores. Adding interaction fingerprint validation (ProLIF) as a hard gate was the single most impactful quality improvement.
+Cycle 6 demonstrated the power of layered validation: PoseBusters caught 35% more geometry issues than RDKit alone; multi-seed docking reduced 7 hinge-positive candidates to just 1 robust survivor; GNINA and Boltz-2 provided orthogonal ranking signals that disagreed with Vina — disagreement that is informative, not noise.
 
-### 7.4 Tool Conflicts Are Diagnostic Signals
+### 7.4 Interaction Analysis is Mandatory
 
-Across all three agents, the most valuable training outcome was learning to diagnose tool disagreements rather than averaging them away. When stability proxies disagree with structural evidence (PE), when MACE strain doesn't predict DFT feasibility (CE↔QE), when fold-back fails on wildtype (PE) — these conflicts are informative, not noise.
+Pure docking scores mask critical binding mode failures. In Cycle 1, 80% of top candidates lacked the fundamental hinge H-bond despite acceptable Vina scores.
 
-### 7.5 Gates Evolve from Static to Conditional
+### 7.5 Boltz-2 Requires Per-Target Calibration
 
-All three agents evolved their gate logic from simple static thresholds to context-dependent policies: peptide-specific vs protein-specific metrics (PE), interface-mutation mode (PE), WT-relative developability (PE), MACE prescreen as heuristic not classifier (CE).
+On ALK5, Boltz-2 binder probability shows weak but directional signal (active mean 0.27 vs decoy 0.10), while absolute IC50 predictions are off by 2 orders of magnitude. Useful as tiebreaker, not primary signal. This is consistent with independent 2026 evaluations reporting weak-to-moderate correlations.
 
-### 7.6 Self-Diagnosis Outweighs Raw Capability
+### 7.6 Tool Conflicts Are Diagnostic Signals
 
-An agent that flags its own mediocre output as mediocre is more useful than one that presents flawed results confidently. Three examples across agents: CE's unprompted identification of KL collapse and missing hinge binders in Cycle 1; QE's detection that dispersion corrections were silently inactive in PySCF (leading to a permanent verification gate and re-run of affected calculations); PE's diagnosis that fold-back was rejecting valid designs because WT itself failed the gate. In each case, self-diagnosis led to permanent behavioral improvement.
+Across all three agents, the most valuable training outcome was learning to diagnose tool disagreements rather than averaging them away. When Vina and Boltz-2 disagree, when MACE strain doesn't predict DFT feasibility, when fold-back fails on wildtype — these conflicts are informative.
+
+### 7.7 Self-Diagnosis Outweighs Raw Capability
+
+An agent that flags its own mediocre output as mediocre is more useful than one that presents flawed results confidently. CE's unprompted identification of KL collapse (Cycle 1), QE's detection of silent dispersion failures, PE's diagnosis of fold-back rejecting valid designs — in each case, self-diagnosis led to permanent behavioral improvement.
 
 ---
 
@@ -367,27 +365,29 @@ An agent that flags its own mediocre output as mediocre is more useful than one 
 
 | Item | Approximate Time |
 |------|-----------------|
-| CE training (18 skills + 5 cycles) | ~3 weeks of iterative sessions |
+| CE training (21 skills + 6 cycles) | ~4 weeks of iterative sessions |
 | PE training (7 skills + 3 practice runs) | ~1 week |
 | QE training (3 skills + validation) | ~3 days |
-| One CE↔QE collaboration round (3-4 molecules) | ~28-31 hours DFT wall time |
-| Full Cycle 5 (DiffSBDD generation → safety → dock → QC → DFT → scoring) | ~30 hours total |
+| One CE↔QE collaboration round (2-3 molecules) | ~14-28 hours DFT wall time |
+| Full Cycle 6 (generation → all gates → DFT → scoring) | ~20 hours total |
 
-All computation ran on a single machine (Docker on Linux/WSL2, RTX 4080 Laptop GPU). DFT was the dominant cost. DiffSBDD generation used GPU (~2 min for 100 molecules); docking used CPU.
+All computation ran on a single machine (Docker on Linux/WSL2, RTX 4080 Laptop GPU). DFT was the dominant cost. DiffSBDD generation used GPU (~2 min for 100 molecules); docking and GNINA used CPU/GPU.
 
 ### 8.1 Current Limitations
 
-- **MACE prescreen**: Current strain proxy does not correlate with DFT OPT_FAIL. Needs richer signals (multi-conformer screening, optimizer diagnostics) or more calibration data.
-- **DiffSBDD 3D coordinates**: Not suitable for direct QC input (strain 450-630 kcal/mol). RDKit re-embed is still required, partially negating the 3D generation advantage.
-- **Docking coverage**: Cycles 2-5 docked 20-50 molecules from pools of 60-400+. Larger-scale virtual screening would improve candidate diversity.
+- **MACE prescreen**: Current strain proxy does not correlate with DFT OPT_FAIL. Needs richer signals or more calibration data.
+- **DiffSBDD 3D coordinates**: Not suitable for direct QC input (strain 450-630 kcal/mol). RDKit re-embed is still required.
+- **Boltz-2 on ALK5**: Weak signal; per-target calibration is essential before trusting affinity predictions.
+- **Rigid receptor**: Flexible pocket docking (PackDock) is documented but not yet installed due to environment incompatibility.
 - **No experimental validation**: All results are computational. Wet-lab synthesis and assay data would be the true validation.
 
 ### 8.2 Future Directions
 
 - **DiffSBDD substructure inpainting**: Use fragment-fixing to enforce hinge motifs directly in the diffusion process (documented but not yet tested)
+- **Flexible pocket docking**: PackDock integration for finalist pose robustness (deferred, guidance written)
+- **Retrosynthesis upgrade**: RetroChimera/DeepRetro as second-opinion route engines (deferred, guidance written)
 - **PE integration**: Use PE to engineer the ALK5 protein itself (e.g., stability variants for assay development)
 - **Higher-level QC**: TZVP refinement or DLPNO-CCSD(T) for final candidate ranking
-- **Expanded collaboration**: Three-agent loop where CE generates ligands, PE optimizes the protein target, and QE validates binding energetics
 
 ---
 
@@ -396,12 +396,10 @@ All computation ran on a single machine (Docker on Linux/WSL2, RTX 4080 Laptop G
 To train a new agent using this methodology:
 
 1. **Set up OpenClaw** with a Docker container and the relevant conda environment for your domain.
-2. **Pre-assess** the base model by asking diagnostic questions across your domain's four dimensions (knowledge, methodology, tools, learning style).
+2. **Pre-assess** the base model by asking diagnostic questions across your domain's four dimensions.
 3. **Design skills iteratively** — start with 2-3 core skills, validate on a practice task, then expand. Each skill should fit in one SKILL.md file (200-700 lines) with decision boundaries and hard gates.
-4. **Use a real project as the training ground** — abstract exercises don't produce robust agents. Our agents became effective through IPF drug discovery (CE), protein interface redesign (PE), and DFT validation (QE).
-5. **For multi-agent collaboration**, define the JSON handoff schema before the first data exchange. Include `mol_id`, all required fields, and a `flag` field for gate status.
-
-Each of the three repositories below contains the complete skill set, training guide, and case studies needed to reproduce or extend the corresponding agent.
+4. **Use a real project as the training ground** — abstract exercises don't produce robust agents.
+5. **For multi-agent collaboration**, define the JSON handoff schema before the first data exchange.
 
 ---
 
@@ -409,7 +407,7 @@ Each of the three repositories below contains the complete skill set, training g
 
 | Repository | Content | Skills |
 |------------|---------|--------|
-| [openclaw-chemicalexpert-training](https://github.com/hg125chinese-sketch/openclaw-chemicalexpert-training) | CE training, 18 skills, IPF case study (5 cycles) | 18 |
+| [openclaw-chemicalexpert-training](https://github.com/hg125chinese-sketch/openclaw-chemicalexpert-training) | CE training, 21 skills, IPF case study (6 cycles) | 21 |
 | [openclaw-proteinengineer-training](https://github.com/hg125chinese-sketch/openclaw-proteinengineer-training) | PE training, 7 skills, 3 protein engineering cases | 7 |
 | [openclaw-quantumexpert-training](https://github.com/hg125chinese-sketch/openclaw-quantumexpert-training) | QE training, 3 skills, CE↔QE collaboration test | 3 |
 
