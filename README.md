@@ -4,7 +4,7 @@
 
 ## Abstract
 
-We trained three specialized AI agents — ChemicalExpert (28 skills), ProteinEngineer (7 skills), and QuantumExpert (4 skills) — using a systematic 7-step methodology on the OpenClaw platform. The agents share a vault-based skill system and collaborate through typed JSON handoff protocols. Validated on an IPF/ALK5 drug discovery campaign over seven DMTA cycles plus analog exploration and N-N safety de-risking campaigns, the system achieved 100% DFT pass rate across three consecutive cycles and both follow-up campaigns (12/12 in the DiffSBDD era) using pocket-conditioned 3D diffusion (DiffSBDD) and a full multi-signal validation pipeline (PoseBusters geometry QC, GNINA CNN rescoring, multi-seed pose robustness, Boltz-2 affinity prediction, conflict-aware panel selection, ToolUniverse-powered target validation, and standardized evidence objects). The agent's cognitive capabilities autonomously identified the N-N safety bottleneck and proposed the de-risking campaign that produced N-N-free leads with improved HOMO-LUMO gaps (2.9 to 4.6-5.0 eV). All training artifacts are open-source.
+We trained three specialized AI agents — ChemicalExpert (28 skills), ProteinEngineer (7 skills), and QuantumExpert (4 skills) — using a systematic 7-step methodology on the OpenClaw platform. The agents share a vault-based skill system and collaborate through typed JSON handoff protocols. Validated on an IPF/ALK5 drug discovery campaign over seven DMTA cycles plus analog exploration, N-N safety de-risking, and NNF05 successor optimization campaigns, the system achieved 100% DFT pass rate across three consecutive cycles and all three follow-up campaigns (14/14 in the DiffSBDD era) using pocket-conditioned 3D diffusion (DiffSBDD) and a full multi-signal validation pipeline (PoseBusters geometry QC, GNINA CNN rescoring, multi-seed pose robustness, Boltz-2 affinity prediction, conflict-aware panel selection, ToolUniverse-powered target validation, and standardized evidence objects). The agent's cognitive capabilities autonomously identified shifting bottlenecks — from hinge generation to N-N safety to lead optimization — and proposed each campaign that produced progressively improved leads, culminating in NNF05_S05 (gap 4.97 eV, dipole 1.54 D — project-wide records). All training artifacts are open-source.
 
 ---
 
@@ -327,6 +327,7 @@ After Cycle 7, CE used its cognitive skill stack for the first time:
 - **Skill 28 (autonomous-cycle):** Identified hinge-compatible generation as the primary bottleneck, proposed 3 next-step options, recommended hinge-aware generation benchmark
 - **Skill 20 update (from P001 backtest):** Hinge-aware pre-ranking improved Top20 hinge rate from 25% to 65% on Cycle 7 data — adopted as default
 - **Post-analog review:** Skill 28 correctly identified that the bottleneck had shifted from hinge generation to N-N safety, leading to the de-risking campaign
+- **Post-N-N-de-risking review:** Skill 28 identified the bottleneck shift from safety to lead selection under disagreement, leading to the global lead decision memo and subsequent NNF05 successor campaign
 
 ### 6.12 N-N De-Risking: Safety Liability Removal
 
@@ -343,7 +344,19 @@ Key results:
 
 Global lead decision: **NNF_05** (primary de-risked lead), **A3_02** (Track A primary), **NNF_02** (challenge reserve).
 
-### 6.13 Cumulative Results
+### 6.13 NNF05 Successor Campaign: Optimizing the De-Risked Lead
+
+A focused 10-member successor panel around the global primary de-risked lead NNF_05 (oxetane bridge), covering bridge microtuning, F-scan, hinge pyridine modifications, bridge atom effects, and an A5_01 hybrid.
+
+Key results from batch testing (6 of 10 tested):
+- 3/6 passed hinge 3/3 (NNF05_S05, NNF05_S08, NNF05_S10)
+- Top 2 sent to QE DFT → **2/2 PASS** (B3LYP-D3(BJ)/def2-SVP)
+- **NNF05_S05** (diF variant): gap **4.97 eV** — project-wide highest; dipole **1.54 D** — project-wide lowest; Vina **-9.64** — strongest among hinge-passing successors; Boltz 0.505
+- **NNF05_S10** (A5_01 hybrid): gap 4.76 eV, dipole 2.67 D, Boltz **0.591** — strongest Boltz among successors
+
+NNF05_S05 is the new global QE benchmark — it surpasses every molecule in the project on electronic stability metrics while maintaining hinge binding, N-N-free safety, and DFT validation. The progression mol_0021 → NNF_05 → NNF05_S05 demonstrates that each campaign builds on the last, with the final successor exceeding every prior molecule on QE stability metrics.
+
+### 6.14 Cumulative Results
 
 **Progress across cycles:**
 
@@ -357,7 +370,7 @@ Global lead decision: **NNF_05** (primary de-risked lead), **A3_02** (Track A pr
 | Best score_final | — | — | — | — | 10.404 | **10.432** | 9.136 |
 | Boltz-2 best binder_prob | — | — | — | — | — | 0.12 | **0.698** |
 
-**CE↔QE collaboration statistics:** 18 molecules submitted for DFT across 5 cycles + analog campaign + N-N de-risking. 15 PASS, 3 OPT_FAIL (17% overall fail rate). DiffSBDD era (Cycles 5-7 + analogs + N-N de-risking): **12/12 = 100% PASS**.
+**CE↔QE collaboration statistics:** 20 molecules submitted for DFT across 5 cycles + analog campaign + N-N de-risking + NNF05 successor campaign. 17 PASS, 3 OPT_FAIL (15% overall fail rate). DiffSBDD era (Cycles 5-7 + analogs + N-N de-risking + NNF05 successor): **14/14 = 100% PASS**.
 
 ---
 
@@ -369,7 +382,7 @@ Six controlled experiments demonstrated that SELFIES GRU VAE decoders structural
 
 ### 7.2 Pocket-Conditioned Diffusion Changes Everything
 
-DiffSBDD produced better molecules across every metric and achieved 100% DFT pass rate across three consecutive cycles plus two follow-up campaigns (12/12). However, its 3D coordinates are optimized for docking pose, not molecular stability. Use DiffSBDD for molecular design, RDKit for geometry preparation.
+DiffSBDD produced better molecules across every metric and achieved 100% DFT pass rate across three consecutive cycles plus three follow-up campaigns (14/14). However, its 3D coordinates are optimized for docking pose, not molecular stability. Use DiffSBDD for molecular design, RDKit for geometry preparation.
 
 ### 7.3 Multi-Signal Validation Catches Silent Failures
 
@@ -397,7 +410,7 @@ An agent that flags its own mediocre output is more useful than one that present
 
 ### 7.9 Cognitive Capabilities Close the Planning Loop
 
-Skills 25-28 allow CE to move beyond executing instructions to proposing next steps. The hinge-aware pre-ranking update (25%→65% improvement) and the N-N de-risking campaign were both proposed by the agent through the autonomous cycle planning workflow — not by human command.
+Skills 25-28 allow CE to move beyond executing instructions to proposing next steps. The hinge-aware pre-ranking update (25%→65% improvement), the N-N de-risking campaign, and the NNF05 successor campaign were all proposed or informed by the agent through the autonomous cycle planning workflow — not by human command.
 
 ### 7.10 Analog Campaigns Validate Lead Neighborhoods
 
@@ -407,6 +420,10 @@ mol_0021 was initially a single robust hit. The analog campaign proved the neigh
 
 Replacing the N-N bridge with C-N, O-containing, or amide/urea linkers increased HOMO-LUMO gap from ~2.9 eV to 4.6–5.0 eV while preserving the validated hinge binding mode. This demonstrates that scaffold-level safety redesign need not collapse lead quality — and may actually improve electronic properties.
 
+### 7.12 Iterative Lead Optimization Compounds Gains
+
+The progression mol_0021 → NNF_05 → NNF05_S05 shows that each campaign builds on the previous one's findings. NNF05_S05 (diF variant) achieved gap 4.97 eV and dipole 1.54 D — both project-wide records — by combining N-N removal with targeted fluorination. This iterative refinement pattern is enabled by the agent's cognitive capabilities and the structured campaign workflow.
+
 ---
 
 ## 8. Limitations and Future Work
@@ -415,13 +432,14 @@ Replacing the N-N bridge with C-N, O-containing, or amide/urea linkers increased
 
 | Item | Approximate Time |
 |------|-----------------|
-| CE training (28 skills + 7 cycles + analogs + N-N de-risking) | ~5 weeks of iterative sessions |
+| CE training (28 skills + 7 cycles + analogs + N-N de-risking + successor) | ~6 weeks of iterative sessions |
 | PE training (7 skills + 3 practice runs) | ~1 week |
 | QE training (4 skills + validation) | ~4 days |
 | One CE↔QE collaboration round (2-3 molecules) | ~6-10 hours DFT wall time |
 | Full Cycle 7 (generation → all gates → DFT → scoring) | ~20 hours total |
 | Analog campaign (10 analogs → validation → DFT) | ~24 hours total |
 | N-N de-risking campaign (8 analogs → validation → DFT) | ~20 hours total |
+| NNF05 successor campaign (10 designed, 6 tested → DFT) | ~18 hours total |
 
 All computation ran on a single machine (Docker on Linux/WSL2, RTX 4080 Laptop GPU).
 
@@ -430,17 +448,20 @@ All computation ran on a single machine (Docker on Linux/WSL2, RTX 4080 Laptop G
 - **MACE prescreen**: Current strain proxy does not correlate with DFT OPT_FAIL. Needs richer signals or more calibration data.
 - **DiffSBDD 3D coordinates**: Not suitable for direct QC input (strain 450-630 kcal/mol). RDKit re-embed is still required.
 - **Boltz-2 on ALK5**: Weak signal; per-target calibration essential. Analog campaign showed it can identify genuine binders but should not be the sole gate.
-- **N-N safety constraint**: Partially resolved — 3 N-N-free robust leads identified (NNF_02, NNF_05, NNF_07), but further medchem optimization needed.
+- **N-N safety constraint**: Partially resolved — 3 N-N-free robust leads + 2 successors identified, but further medchem optimization needed.
 - **No experimental validation**: All results are computational.
 - **GPU4PySCF**: Verified usable but density fitting compatibility pending (CuPy 14 issue).
+- **NNF05 successor coverage**: 6 of 10 designed successors tested; remaining 4 untested.
 
 ### 8.2 Future Directions
 
-- **NNF_05 successor optimization**: Focused analog design around the global primary de-risked lead
+- **Second-generation NNF05_S05 successors**: Further optimization around the new global #1 lead
+- **Complete NNF05 successor panel**: Test remaining 4 analogs (S03, S06, S07, S09)
 - **Hinge-aware generation**: Pharmacophore-constrained diffusion or DiffSBDD substructure inpainting to directly enforce hinge motifs
 - **PE integration**: Use PE to engineer ALK5 stability variants for assay development
 - **Higher-level QC**: TZVP refinement or DLPNO-CCSD(T) for final candidate ranking
 - **Three-agent loop**: CE generates ligands, PE optimizes the protein target, QE validates binding energetics
+- **New target campaign**: Apply the 28-skill pipeline to a new target (e.g. glucocorticoid receptor) to validate cross-target transferability
 - **Expanded ToolUniverse integration**: More skills using the 1996-tool SDK for automated evidence gathering
 
 ---
@@ -463,7 +484,7 @@ Each of the three repositories below contains the complete skill set, training g
 
 | Repository | Content | Skills |
 |------------|---------|--------|
-| [openclaw-chemicalexpert-training](https://github.com/hg125chinese-sketch/openclaw-chemicalexpert-training) | CE training, 28 skills, IPF case study (7 cycles + analog + N-N de-risking) | 28 |
+| [openclaw-chemicalexpert-training](https://github.com/hg125chinese-sketch/openclaw-chemicalexpert-training) | CE training, 28 skills, IPF case study (7 cycles + analog + N-N de-risking + NNF05 successor) | 28 |
 | [openclaw-proteinengineer-training](https://github.com/hg125chinese-sketch/openclaw-proteinengineer-training) | PE training, 7 skills, 3 protein engineering cases | 7 |
 | [openclaw-quantumexpert-training](https://github.com/hg125chinese-sketch/openclaw-quantumexpert-training) | QE training, 4 skills, CE↔QE collaboration test | 4 |
 
